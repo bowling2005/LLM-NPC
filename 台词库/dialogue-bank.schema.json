@@ -1,0 +1,416 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.local/schemas/dialogue-bank.schema.json",
+  "title": "DialogueBank",
+  "description": "《港口宝石失窃案》台词库根结构。玩家以 a/b/c/d 选项推进剧情，台词由 时间+地点+事件+历史选择链+状态 五维条件决定。",
+  "type": "object",
+  "required": ["meta", "enums", "lines", "choiceNodes"],
+  "properties": {
+    "meta": {
+      "type": "object",
+      "required": ["title", "schemaVersion", "scriptVersion"],
+      "properties": {
+        "title": { "const": "港口宝石失窃案" },
+        "schemaVersion": { "type": "string" },
+        "scriptVersion": { "type": "string" },
+        "setting": {
+          "type": "object",
+          "properties": {
+            "era": { "type": "string" },
+            "location": { "type": "string" },
+            "days": { "type": "integer", "const": 7 },
+            "actionsPerDay": { "type": "integer", "const": 3 }
+          }
+        }
+      }
+    },
+
+    "enums": {
+      "type": "object",
+      "description": "枚举字典。所有 id 引用必须在此登记，否则校验失败。",
+      "required": ["npc", "location", "timeSlot", "event"],
+      "properties": {
+        "npc": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "code", "role", "displayName"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z_]+$" },
+              "code": { "type": "string", "description": "编号用三字母码，如 NOB / DET" },
+              "role": { "enum": ["protagonist", "quest_giver", "ally", "antagonist", "informant", "witness", "functional", "hidden_line", "narrator"] },
+              "displayName": { "type": "string" },
+              "age": { "type": ["integer", "null"] },
+              "speechTraits": { "type": "array", "items": { "type": "string" } },
+              "verbalTic": { "type": ["string", "null"], "description": "口癖前缀，由渲染层统一处理，不写进 text。例：警探的\"嗯\"" },
+              "locations": { "type": "array", "items": { "type": "string" }, "description": "该 NPC 可能出现的地点" },
+              "stateMachine": { "type": "array", "items": { "type": "string" }, "description": "如码头经理：present→fleeing→arrested→confessed" }
+            }
+          }
+        },
+        "location": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "code", "name"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z_0-9]+$" },
+              "code": { "type": "string" },
+              "name": { "type": "string" },
+              "function": { "type": "string" },
+              "enterable": { "type": "boolean", "default": true },
+              "revisitable": { "type": "boolean", "default": true }
+            }
+          }
+        },
+        "timeSlot": {
+          "type": "array",
+          "items": { "enum": ["dawn", "morning", "noon", "afternoon", "dusk", "night", "midnight", "any"] }
+        },
+        "event": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "day", "forced"],
+            "properties": {
+              "id": { "type": "string" },
+              "day": { "type": ["integer", "null"] },
+              "location": { "type": "string" },
+              "forced": { "type": "boolean", "description": "F1/F2/F3 为 true，不可跳过" },
+              "skipCost": { "type": ["string", "null"] }
+            }
+          }
+        },
+        "flag": {
+          "type": "array",
+          "description": "flag 注册表。命名空间：main.* / side.* / hidden.* / npc.* / sys.*",
+          "items": {
+            "type": "object",
+            "required": ["id", "namespace", "desc"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^(main|side|hidden|npc|sys)\\.[a-z_0-9.]+$" },
+              "namespace": { "enum": ["main", "side", "hidden", "npc", "sys"] },
+              "desc": { "type": "string" },
+              "irreversible": { "type": "boolean", "default": false, "description": "hidden.* 一律 true，只置真不清除" },
+              "setBy": { "type": "array", "items": { "type": "string" }, "description": "设置它的台词/选项 id" }
+            }
+          }
+        },
+        "item": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "name"],
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z_0-9]+$" },
+              "name": { "type": "string" },
+              "kind": { "enum": ["evidence", "key_item", "document", "credential", "personal"] },
+              "inspectLine": { "type": ["string", "null"], "description": "查看时触发的 DialogueLine id" },
+              "chainRelevance": { "enum": ["critical", "supporting", "background"] }
+            }
+          }
+        }
+      }
+    },
+
+    "lines": {
+      "type": "array",
+      "description": "DialogueLine 主表。台词、旁白、文书共用此表，靠 type 区分。",
+      "items": { "$ref": "#/definitions/DialogueLine" }
+    },
+
+    "choiceNodes": {
+      "type": "array",
+      "description": "a/b/c/d 决策节点。",
+      "items": { "$ref": "#/definitions/ChoiceNode" }
+    },
+
+    "endings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "conditions"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "conditions": { "$ref": "#/definitions/Conditions" },
+          "lines": { "type": "array", "items": { "type": "string" } },
+          "isCanon": { "type": "boolean", "default": false }
+        }
+      }
+    }
+  },
+
+  "definitions": {
+
+    "Conditions": {
+      "type": "object",
+      "description": "条件组。缺省字段视为无约束。所有子条件之间是 AND 关系。",
+      "additionalProperties": false,
+      "properties": {
+        "requiresFlags": { "type": "array", "items": { "type": "string" } },
+        "forbidsFlags": { "type": "array", "items": { "type": "string" } },
+        "requiresItems": { "type": "array", "items": { "type": "string" } },
+        "forbidsItems": { "type": "array", "items": { "type": "string" } },
+        "npcState": {
+          "type": "object",
+          "description": "键为 npcId，值为该 NPC 必须满足的状态断言",
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": { "type": ["boolean", "string", "integer", "null"] }
+          }
+        },
+        "relationship": {
+          "type": "object",
+          "description": "键为 npcId，值为比较表达式对象，如 {\">=\": 2}",
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "trust": { "$ref": "#/definitions/Comparator" },
+              "hostility": { "$ref": "#/definitions/Comparator" }
+            }
+          }
+        },
+        "visitIndex": { "$ref": "#/definitions/Comparator", "description": "该场景的第几次访问" },
+        "day": { "$ref": "#/definitions/Comparator" },
+        "slot": { "type": "array", "items": { "type": "string" } },
+        "weather": { "type": "array", "items": { "type": "string" } },
+        "actionBudget": {
+          "type": "object",
+          "properties": { "remaining": { "$ref": "#/definitions/Comparator" } }
+        },
+        "chain": { "$ref": "#/definitions/ChainCondition" }
+      }
+    },
+
+    "Comparator": {
+      "type": "object",
+      "description": "数值比较。至多一个键。",
+      "minProperties": 1,
+      "maxProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "==": { "type": "number" },
+        "!=": { "type": "number" },
+        ">=": { "type": "number" },
+        "<=": { "type": "number" },
+        ">": { "type": "number" },
+        "<": { "type": "number" },
+        "in": { "type": "array", "items": { "type": "number" } }
+      }
+    },
+
+    "ChainCondition": {
+      "type": "object",
+      "description": "直接查询原始选择链。少用——绝大多数条件应改写为 flag。仅用于需要判断顺序、或需要精确到\"哪天选了哪个选项\"的对质/回忆场景。",
+      "required": ["mode", "entries"],
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "enum": ["all", "any", "ordered_all", "ordered_any", "count"],
+          "description": "all=全发生不论顺序；any=至少一条；ordered_all=全发生且顺序一致；ordered_any=按序命中若干；count=命中数≥minCount"
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["node"],
+            "properties": {
+              "node": { "type": "string", "description": "ChoiceNode id" },
+              "option": { "enum": ["a", "b", "c", "d", null] },
+              "day": { "type": ["integer", "null"] }
+            }
+          }
+        },
+        "minCount": { "type": ["integer", "null"] },
+        "withinDays": {
+          "type": ["array", "null"],
+          "items": { "type": "integer" },
+          "minItems": 2,
+          "maxItems": 2,
+          "description": "[起始日, 结束日]，限制这些选择发生的日期区间"
+        }
+      }
+    },
+
+    "Effects": {
+      "type": "object",
+      "description": "该台词/选项播完后对 GameState 的写入。",
+      "additionalProperties": false,
+      "properties": {
+        "setFlags": { "type": "array", "items": { "type": "string" } },
+        "clearFlags": { "type": "array", "items": { "type": "string" }, "description": "禁止清除 hidden.* 命名空间" },
+        "addItems": { "type": "array", "items": { "type": "string" } },
+        "removeItems": { "type": "array", "items": { "type": "string" } },
+        "relationship": {
+          "type": "object",
+          "description": "键为 npcId，值为增量整数",
+          "additionalProperties": { "type": "integer" }
+        },
+        "npcState": { "type": "object" },
+        "unlockNodes": { "type": "array", "items": { "type": "string" } },
+        "advanceDay": { "type": "boolean", "default": false },
+        "consumeAction": { "type": "boolean", "default": false },
+        "teleport": { "type": ["string", "null"] },
+        "triggerEvent": { "type": ["string", "null"] }
+      }
+    },
+
+    "Delivery": {
+      "type": "object",
+      "description": "演出层信息。与文案分离，便于本地化与渲染。",
+      "additionalProperties": false,
+      "properties": {
+        "emotion": { "enum": ["neutral", "restrained", "warm", "anxious", "evasive", "cold", "hostile", "collapsing", "threatening", null] },
+        "tone": { "enum": ["low", "normal", "raised", "whisper", null] },
+        "action": { "type": ["string", "null"], "description": "伴随动作/舞台指示，如\"递出照片\"" },
+        "sfx": { "type": ["string", "null"] },
+        "bgm": { "type": ["string", "null"] },
+        "portrait": { "type": ["string", "null"] },
+        "render": { "enum": ["speech_bubble", "narration_box", "handwritten_letter", "typed_document", "official_record", "newspaper", null], "default": "speech_bubble" },
+        "camera": { "type": ["string", "null"] }
+      }
+    },
+
+    "DialogueLine": {
+      "type": "object",
+      "required": ["id", "type", "npc", "trigger", "priority", "text", "summary"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^(DL|DOC|NAR)_[A-Z0-9]+(_[A-Z0-9]+)*_D[0-9]_[0-9]{3}$",
+          "description": "编号规范：<类型>_<NPC码>_<地点码>_D<日>_<三位序号>。DL 用 NPC码+地点码两段；DOC/NAR 因物证常无署名者，允许只用地点码一段。"
+        },
+        "type": {
+          "enum": ["dialogue", "narration", "document", "inner"],
+          "description": "dialogue=NPC台词；narration=旁白；document=物证文书；inner=记者内心独白"
+        },
+        "version": { "type": "string" },
+
+        "npc": { "type": "string", "description": "说话者 npcId；旁白用 narrator" },
+        "target": { "type": "string", "default": "player", "description": "说话对象，可为其他 npcId（NPC 互相对话）" },
+        "location": { "type": ["string", "null"] },
+        "time": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "day": { "type": ["integer", "null"], "minimum": 1, "maximum": 7 },
+            "slot": { "type": "array", "items": { "type": "string" } },
+            "weather": { "type": ["string", "null"] },
+            "visitIndex": { "type": ["integer", "null"], "minimum": 1 }
+          }
+        },
+        "event": { "type": ["string", "null"] },
+
+        "trigger": {
+          "type": "object",
+          "required": ["type"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "enum": ["forced_node", "choice_response", "enter_scene", "item_inspect", "npc_initiative", "idle_fallback", "ending"],
+              "description": "forced_node=强制节点(F1/F2/F3)，条件恒真、优先级100；choice_response=玩家选了某选项后的回应；enter_scene=进场自动播；item_inspect=查看物证；npc_initiative=NPC依状态阈值主动搭话；idle_fallback=兜底，条件恒真、优先级10"
+            },
+            "nodeId": { "type": ["string", "null"] },
+            "choiceNodeId": { "type": ["string", "null"] },
+            "optionId": { "enum": ["a", "b", "c", "d", null] },
+            "itemId": { "type": ["string", "null"] },
+            "eventId": { "type": ["string", "null"] }
+          }
+        },
+
+        "conditions": { "$ref": "#/definitions/Conditions" },
+
+        "priority": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "多条命中时取最高。建议：强制节点100 / 主线推进80 / 选项回应60 / 状态变体与暗线40 / 重复访问递进30 / 兜底10"
+        },
+        "once": { "type": "boolean", "default": false, "description": "只播一次，写入存档 playedLines" },
+        "group": {
+          "type": ["string", "null"],
+          "description": "同组内互斥，只播优先级最高的一条。变体台词必须同组，否则条件写松就会连播多条"
+        },
+        "index": { "type": "integer", "description": "同优先级时的次序，小者先" },
+
+        "text": {
+          "type": "string",
+          "description": "台词正文。当前阶段留白，由文案按 summary 填写。"
+        },
+        "summary": { "type": "string", "description": "一句简略描述，供文案填写 text 时参考" },
+
+        "delivery": { "$ref": "#/definitions/Delivery" },
+        "effects": { "$ref": "#/definitions/Effects" },
+
+        "next": {
+          "type": "object",
+          "description": "播完后的走向",
+          "additionalProperties": false,
+          "properties": {
+            "type": { "enum": ["line", "choice_node", "scene", "ending", "auto", "none"] },
+            "id": { "type": ["string", "null"] }
+          }
+        },
+        "fallback": { "type": ["string", "null"], "description": "本条条件不满足时改播的台词 id" },
+
+        "tags": { "type": "array", "items": { "type": "string" } },
+        "notes": { "type": "string" }
+      }
+    },
+
+    "ChoiceNode": {
+      "type": "object",
+      "required": ["id", "day", "location", "options"],
+      "additionalProperties": false,
+      "properties": {
+        "id": { "type": "string", "pattern": "^CN_D[0-9]_[A-Z0-9]+(_[A-Z0-9]+)*$", "description": "编号规范：CN_D<日>_<地点码>[_<主题>]" },
+        "day": { "type": "integer", "minimum": 1, "maximum": 7 },
+        "slot": { "type": ["string", "null"] },
+        "location": { "type": "string" },
+        "event": { "type": ["string", "null"] },
+
+        "promptLine": { "type": ["string", "null"], "description": "选项出现前的引导台词 id" },
+        "maxPicks": { "type": "integer", "minimum": 1, "default": 1, "description": "最多可选几项。剧本 D1 搜证为 2（\"选2处\"）" },
+        "allowSkip": { "type": "boolean", "default": false },
+        "skipLine": { "type": ["string", "null"] },
+        "repeatable": { "type": "boolean", "default": false, "description": "true=选完可继续选剩余项直到 maxPicks 用尽" },
+        "conditions": { "$ref": "#/definitions/Conditions" },
+
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": ["id"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "enum": ["a", "b", "c", "d"] },
+              "label": { "type": "string", "description": "选项文案，当前留白" },
+              "summary": { "type": "string" },
+              "requires": { "$ref": "#/definitions/Conditions" },
+              "hidden": { "type": "boolean", "default": false, "description": "true=条件不满足时不显示；false=置灰" },
+              "consumable": { "type": "boolean", "default": true },
+              "responseLines": { "type": "array", "items": { "type": "string" } },
+              "effects": { "$ref": "#/definitions/Effects" },
+              "next": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": { "enum": ["line", "choice_node", "scene", "ending", "auto", "none", null] },
+                  "id": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+
+        "onExhausted": { "type": ["string", "null"], "description": "配额用尽/选择结束后的收束台词 id" },
+        "onTimeout": { "type": ["string", "null"] }
+      }
+    }
+  }
+}

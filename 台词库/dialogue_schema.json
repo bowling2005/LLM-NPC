@@ -1,0 +1,234 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://example.local/harbor-gem/dialogue_schema.json",
+  "title": "港口宝石失窃案 · 台词库数据结构",
+  "description": "定义 Line（台词）、Option（选项）、DialogueEvent（对话事件）、GameState（运行时状态）四类对象",
+
+  "definitions": {
+
+    "npc_code": {
+      "type": "string",
+      "description": "NPC 代码",
+      "enum": ["PC","NOB","DET","BAR","EDT","LAW","MGR","WIF","SEC","WRK","CLR","JUD","BUT","SYS"]
+    },
+
+    "slot": {
+      "type": "string",
+      "description": "台词槽位",
+      "enum": ["narration","opening","response","followup","react","closing","inner","ambient","document"]
+    },
+
+    "mode": {
+      "type": "string",
+      "description": "播放模式：sequential=全播 / first_match=按优先级取第一条满足的 / random_pool=随机取 / concat=动态拼接",
+      "enum": ["sequential","first_match","random_pool","concat"]
+    },
+
+    "time_slot": {
+      "type": "string",
+      "enum": ["dawn","morning","afternoon","dusk","night"]
+    },
+
+    "num_cmp": {
+      "description": "数值比较：可直接给数字（等于），或给 {\">=\":n} {\"<=\":n} {\">\":n} {\"<\":n}",
+      "oneOf": [
+        { "type": "number" },
+        { "type": "object", "properties": { ">=": {"type":"number"}, "<=": {"type":"number"}, ">": {"type":"number"}, "<": {"type":"number"} }, "minProperties": 1, "additionalProperties": false }
+      ]
+    },
+
+    "day_range": {
+      "description": "日期条件：整数=等于；{min,max}=闭区间；{in:[...]}=枚举",
+      "oneOf": [
+        { "type": "integer", "minimum": 0, "maximum": 7 },
+        { "type": "object", "properties": {
+            "min": { "type": "integer", "minimum": 0, "maximum": 7 },
+            "max": { "type": "integer", "minimum": 0, "maximum": 7 }
+          }, "additionalProperties": false },
+        { "type": "object", "properties": { "in": { "type": "array", "items": { "type": "integer", "minimum": 0, "maximum": 7 }, "minItems": 1 } }, "required": ["in"], "additionalProperties": false }
+      ]
+    },
+
+    "choice_ref": {
+      "type": "object",
+      "description": "指向一次历史选择",
+      "properties": {
+        "event":  { "type": "string", "pattern": "^E-" },
+        "option": { "type": "string", "enum": ["a","b","c","d","A","B","C","D"] },
+        "tag":    { "type": "string", "description": "或按选项标签匹配，如「冒进」「共情」" }
+      },
+      "anyOf": [ { "required": ["event","option"] }, { "required": ["tag"] } ]
+    },
+
+    "condition": {
+      "description": "触发条件 DSL。组合算子 all/any/not + 原子谓词。condition 为 null 表示恒成立（兜底台词必须为 null）",
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/definitions/condition_object" }
+      ]
+    },
+
+    "condition_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "all": { "type": "array", "items": { "$ref": "#/definitions/condition" }, "minItems": 1 },
+        "any": { "type": "array", "items": { "$ref": "#/definitions/condition" }, "minItems": 1 },
+        "not": { "$ref": "#/definitions/condition" },
+
+        "day":               { "$ref": "#/definitions/day_range" },
+        "time_slot":         { "oneOf": [{ "$ref": "#/definitions/time_slot" }, { "type": "array", "items": { "$ref": "#/definitions/time_slot" } }] },
+        "weather":           { "type": "string" },
+        "location":          { "oneOf": [{ "type": "string", "pattern": "^LOC_" }, { "type": "object", "properties": { "in": { "type": "array", "items": { "type": "string", "pattern": "^LOC_" } }, "not_in": { "type": "array", "items": { "type": "string", "pattern": "^LOC_" } } }, "additionalProperties": false }] },
+        "action_remaining":  { "$ref": "#/definitions/num_cmp" },
+
+        "has_evidence":      { "type": "array", "items": { "type": "string", "pattern": "^EV_" }, "description": "全部持有（AND）" },
+        "has_any_evidence":  { "type": "array", "items": { "type": "string", "pattern": "^EV_" }, "description": "任一持有（OR）" },
+        "lacks_evidence":    { "type": "array", "items": { "type": "string", "pattern": "^EV_" } },
+        "evidence_count":    { "$ref": "#/definitions/num_cmp" },
+
+        "flag":              { "type": "string" },
+        "flag_value":        { "type": "object", "additionalProperties": { "$ref": "#/definitions/num_cmp" } },
+        "affinity":          { "type": "object", "additionalProperties": { "$ref": "#/definitions/num_cmp" }, "description": "NPC 代码 → 阈值" },
+        "affinity_max":      { "type": "object", "additionalProperties": { "$ref": "#/definitions/num_cmp" }, "description": "用于冷淡版台词" },
+        "profile":           { "type": "object", "additionalProperties": { "$ref": "#/definitions/num_cmp" }, "description": "画像标签 → 阈值，如 P_实证" },
+        "visit_count":       { "type": "object", "additionalProperties": { "$ref": "#/definitions/num_cmp" } },
+
+        "choice":            { "$ref": "#/definitions/choice_ref", "description": "单点历史选择" },
+        "has_choices":       { "type": "array", "items": { "$ref": "#/definitions/choice_ref" }, "description": "无序集合：都做过的" },
+        "choice_chain":      { "type": "array", "items": { "$ref": "#/definitions/choice_ref" }, "description": "有序链：强因果解锁，全剧建议 ≤10 处" },
+        "choice_count":      { "$ref": "#/definitions/num_cmp" },
+        "not_chosen":        { "$ref": "#/definitions/choice_ref" },
+
+        "played":            { "type": "array", "items": { "type": "string", "pattern": "^L-" } },
+        "not_played":        { "type": "array", "items": { "type": "string", "pattern": "^L-" } },
+        "forced_done":       { "type": "string", "enum": ["F1","F2","F3"] },
+        "forced_pending":    { "type": "string", "enum": ["F1","F2","F3"] },
+        "event_done":        { "type": "string", "pattern": "^E-" },
+        "event_not_done":    { "type": "string", "pattern": "^E-" },
+        "random":            { "type": "number", "minimum": 0, "maximum": 1 }
+      },
+      "minProperties": 1
+    },
+
+    "effects": {
+      "type": "object",
+      "description": "写回 GameState 的副作用",
+      "additionalProperties": false,
+      "properties": {
+        "evidence":   { "type": "array", "items": { "type": "string", "pattern": "^EV_" } },
+        "flags":      { "type": "object", "additionalProperties": { "type": "boolean" } },
+        "flag_delta": { "type": "object", "additionalProperties": { "type": "number" } },
+        "affinity":   { "type": "object", "additionalProperties": { "type": "number" }, "description": "NPC 代码 → 增减值" },
+        "profile":    { "type": "object", "additionalProperties": { "type": "number" }, "description": "画像标签 → 增减值" },
+        "unlock":     { "type": "array", "items": { "type": "string" }, "description": "解锁的事件/选项 ID" }
+      }
+    },
+
+    "Line": {
+      "type": "object",
+      "description": "台词库最小存储单位",
+      "required": ["id","speaker","slot","mode","priority","text","note"],
+      "additionalProperties": false,
+      "properties": {
+        "id":        { "type": "string", "pattern": "^L-[A-Z]{2,4}(-[A-Z0-9]+)*-[0-9]{3}(-v[0-9]+)?$" },
+        "speaker":   { "$ref": "#/definitions/npc_code" },
+        "slot":      { "$ref": "#/definitions/slot" },
+        "mode":      { "$ref": "#/definitions/mode" },
+        "group":     { "type": "string", "pattern": "^G-", "description": "同组内按 priority 择一播放；组内必须有 priority=0 且 condition=null 的兜底" },
+        "priority":  { "type": "integer", "minimum": 0, "description": "数值大者优先；0 = 兜底" },
+        "condition": { "$ref": "#/definitions/condition" },
+        "text":      { "type": "string", "description": "台词正文，当前留白" },
+        "note":      { "type": "string", "description": "一句简略描述：这句话在什么情况下、承担什么功能" },
+        "event":     { "type": "string", "pattern": "^E-", "description": "归属事件；ambient 类可为空" },
+        "order":     { "type": "integer", "description": "mode=sequential 时的播放顺序" },
+        "tags":      { "type": "array", "items": { "type": "string" } },
+        "once":      { "type": "boolean", "default": false, "description": "true = 全剧只播一次" },
+        "vo_key":    { "type": ["string","null"], "description": "预留配音/本地化键" }
+      }
+    },
+
+    "Option": {
+      "type": "object",
+      "required": ["id","key","label","reply_lines","effects"],
+      "additionalProperties": false,
+      "properties": {
+        "id":            { "type": "string", "pattern": "^O-E-.+-[abcdABCD]$" },
+        "key":           { "type": "string", "enum": ["a","b","c","d"] },
+        "label":         { "type": "string", "description": "选项显示文本，如「夹层：起开底板」" },
+        "condition":     { "$ref": "#/definitions/condition", "description": "为 null 表示恒可选；否则需前置证据/标志才亮起" },
+        "reply_lines":   { "type": "array", "items": { "type": "string", "pattern": "^L-" }, "description": "选中后依次播放的台词 ID" },
+        "effects":       { "$ref": "#/definitions/effects" },
+        "next_event":    { "type": ["string","null"], "pattern": "^E-", "description": "跳转到另一个事件" },
+        "unlock_option": { "type": ["string","null"], "description": "解锁别处的新选项 ID" },
+        "tag":           { "type": "string", "description": "选项性质标签，计入 profile，如「实证」「共情」「冒进」「隐忍」" }
+      }
+    },
+
+    "FlowStage": {
+      "type": "object",
+      "required": ["stage"],
+      "additionalProperties": false,
+      "properties": {
+        "stage":   { "type": "string", "enum": ["narration","opening","player","react","options","closing"] },
+        "lines":   { "type": "array", "items": { "type": "string", "pattern": "^L-" } },
+        "options": { "type": "array", "items": { "type": "string", "pattern": "^O-" } },
+        "pick":    { "type": "integer", "minimum": 1, "maximum": 4, "description": "可选几项" },
+        "pick_rule": { "type": "string", "enum": ["exactly","at_least","at_most","up_to"], "default": "exactly" }
+      }
+    },
+
+    "DialogueEvent": {
+      "type": "object",
+      "required": ["id","title","day","location","forced","flow","trigger"],
+      "additionalProperties": false,
+      "properties": {
+        "id":             { "type": "string", "pattern": "^E-D[0-7]-(A[0-9?]|F[123]|PROL|EVE)-.+$" },
+        "title":          { "type": "string" },
+        "day":            { "$ref": "#/definitions/day_range" },
+        "time_slot":      { "$ref": "#/definitions/time_slot" },
+        "weather":        { "type": "string" },
+        "location":       { "type": "string", "pattern": "^LOC_" },
+        "npcs":           { "type": "array", "items": { "$ref": "#/definitions/npc_code" } },
+        "forced":         { "type": "boolean", "description": "true = F1/F2/F3 强制节点，绕过常规触发条件" },
+        "cost_action":    { "type": "integer", "minimum": 0, "maximum": 1, "description": "消耗行动点；开端与傍晚 F 节点为 0" },
+        "priority":       { "type": "integer", "minimum": 0, "description": "同一时机多事件竞争时的排序，强制节点应最高" },
+        "trigger":        { "$ref": "#/definitions/condition" },
+        "once":           { "type": "boolean", "default": true },
+        "flow":           { "type": "array", "items": { "$ref": "#/definitions/FlowStage" }, "minItems": 1 },
+        "effects":        { "$ref": "#/definitions/effects" },
+        "fallback_event": { "type": ["string","null"], "pattern": "^E-", "description": "未触发时的补叙事件" },
+        "exclusive_with": { "type": "array", "items": { "type": "string", "pattern": "^E-" }, "description": "同天行动池内互斥的事件" }
+      }
+    },
+
+    "GameState": {
+      "type": "object",
+      "description": "运行时状态，全局唯一一份",
+      "required": ["day","time_slot","location","action_remaining","evidence","flags","affinity","profile","visit_count","played_lines","choice_log","forced_done"],
+      "properties": {
+        "day":               { "type": "integer", "minimum": 0, "maximum": 7 },
+        "time_slot":         { "$ref": "#/definitions/time_slot" },
+        "weather":           { "type": "string" },
+        "location":          { "type": "string", "pattern": "^LOC_" },
+        "action_remaining":  { "type": "integer", "minimum": 0, "maximum": 3 },
+        "evidence":          { "type": "array", "items": { "type": "string", "pattern": "^EV_" }, "uniqueItems": true },
+        "flags":             { "type": "object", "additionalProperties": { "type": ["boolean","number"] } },
+        "affinity":          { "type": "object", "additionalProperties": { "type": "number" } },
+        "profile":           { "type": "object", "additionalProperties": { "type": "number" } },
+        "visit_count":       { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+        "played_lines":      { "type": "array", "items": { "type": "string", "pattern": "^L-" } },
+        "choice_log":        { "type": "array", "items": { "type": "object", "required": ["event","option","day"], "properties": { "event": {"type":"string"}, "option": {"type":"string"}, "day": {"type":"integer"} } } },
+        "forced_done":       { "type": "object", "properties": { "F1": {"type":"boolean"}, "F2": {"type":"boolean"}, "F3": {"type":"boolean"} } },
+        "endings_unlocked":  { "type": "array", "items": { "type": "string" } }
+      }
+    }
+  },
+
+  "type": "object",
+  "properties": {
+    "lines":  { "type": "array", "items": { "$ref": "#/definitions/Line" } },
+    "events": { "type": "array", "items": { "$ref": "#/definitions/DialogueEvent" } },
+    "options":{ "type": "array", "items": { "$ref": "#/definitions/Option" } }
+  }
+}
