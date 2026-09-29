@@ -592,7 +592,7 @@ namespace Dialogue
             var inWindow = candidates.Where(MatchesTimeWindow).ToList();
 
             // 1. 条件过滤
-            var passed = inWindow.Where(EvaluateConditions).ToList();
+            var passed = inWindow.Where(line => EvaluateConditions(line.Conditions)).ToList();
 
             // 2. 过滤 once=true 且已播过的
             passed = passed.Where(line => !line.Once || !state.HasPlayed(line.Id)).ToList();

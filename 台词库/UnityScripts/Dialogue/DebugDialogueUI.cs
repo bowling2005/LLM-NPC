@@ -159,7 +159,7 @@ namespace Dialogue
             var viewRect = new Rect(box.x + 14, box.y + 36, box.width - 28, box.height - 80);
             var content = new GUIContent(_text);
             float needed = _textStyle.CalcHeight(content, viewRect.width);
-            _scroll = GUI.BeginScrollView(viewRect, _scroll, new Vector2(viewRect.width, Mathf.Max(needed, viewRect.height)));
+            _scroll = GUI.BeginScrollView(viewRect, _scroll, new Rect(0, 0, viewRect.width, Mathf.Max(needed, viewRect.height)));
             GUI.Label(new Rect(0, 0, viewRect.width - 20, needed), _text, _textStyle);
             GUI.EndScrollView();
 
